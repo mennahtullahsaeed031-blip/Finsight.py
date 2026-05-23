@@ -4,7 +4,7 @@ from datetime import datetime
 class CFOReport(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 13)
-        self.cell(0, 10, 'FinSight — Corporate Investment Report', ln=True, align='C')
+        self.cell(0, 10, 'FinSight - Corporate Investment Report', ln=True, align='C')
         self.set_font('Arial', '', 9)
         self.cell(0, 6,
                   f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}',
@@ -13,8 +13,7 @@ class CFOReport(FPDF):
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()} — Confidential', align='C')
+        self.set_font('Arial', 'I', 8)self.cell(0, 10, f'Page {self.page_no()} - Confidential', align='C')
 
 def generate_report(project_name, project_type,
                     scenarios, ai_memo, path='investment_report.pdf'):
