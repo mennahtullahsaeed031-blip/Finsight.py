@@ -142,7 +142,7 @@ elif step == 2:
                     "tax_rate": tax_rate / 100,
                     "inflation": inflation / 100, "step": 3
                 })
-              st.session_state["projects"].append({
+               st.session_state["projects"].append({
     "name":          st.session_state.get("project_name", "Project"),
     "type":          st.session_state.get("project_type", "Expansion"),
     "capex":         capex,
