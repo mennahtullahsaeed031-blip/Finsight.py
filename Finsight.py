@@ -51,7 +51,8 @@ if step == 1:
         company_name = st.text_input("Company Name",
                            placeholder="e.g. Edita Food Industries")
         currency = st.selectbox("Base Currency", ["EGP", "USD", "EUR"])
-
+    if "projects" not in st.session_state:
+           st.session_state["projects"] = []
     if st.button("Next →"):
         if not project_name:
             st.error("Please enter a project name.")
@@ -141,6 +142,17 @@ elif step == 2:
                     "tax_rate": tax_rate / 100,
                     "inflation": inflation / 100, "step": 3
                 })
+              st.session_state["projects"].append({
+    "name":          st.session_state.get("project_name", "Project"),
+    "type":          st.session_state.get("project_type", "Expansion"),
+    "capex":         capex,
+    "revenues":      revenues,
+    "fixed_costs":   fixed_costs,
+    "var_costs":     var_costs,
+    "maintenance":   maintenance,
+    "discount_rate": discount_rate / 100,
+    "tax_rate":      tax_rate / 100,
+})
                 save_session(dict(st.session_state))
                 st.rerun()
 
@@ -217,7 +229,7 @@ elif step == 4:
     s = st.session_state
 
     if "capex" not in s:
-        st.error("⚠️ Session data missing. Please go back to Step 2.")
+        st.error("⚠️ Session data missing.")
         if st.button("← Back to Data Input"):
             st.session_state["step"] = 2
             st.rerun()
@@ -234,29 +246,26 @@ elif step == 4:
 
     # ── Executive Dashboard ──────────────────────────────
     st.markdown("### 🎯 Executive Dashboard")
-    npv  = scenarios['base']['npv']
-    irr  = scenarios['base']['irr'] or 0
-    pi   = scenarios['base']['pi']  or 0
-    dr   = s['discount_rate'] * 100
-
-    bench     = get_benchmark(s.get("project_type", "Expansion"))
-    bench_min = bench["min_irr"]
-    bench_max = bench["max_irr"]
+    npv   = scenarios['base']['npv']
+    irr   = scenarios['base']['irr'] or 0
+    pi    = scenarios['base']['pi']  or 0
+    dr    = s['discount_rate'] * 100
+    bench = get_benchmark(s.get("project_type", "Expansion"))
 
     if npv > 0 and irr > dr and pi > 1:
-        verdict = "🟢 APPROVE"
+        verdict       = "🟢 APPROVE"
         verdict_color = "#2ecc71"
     elif npv > 0 and pi > 1:
-        verdict = "🟡 CONDITIONAL"
+        verdict       = "🟡 CONDITIONAL"
         verdict_color = "#f39c12"
     else:
-        verdict = "🔴 REJECT"
+        verdict       = "🔴 REJECT"
         verdict_color = "#e74c3c"
 
     bench_status = (
-        f"✅ IRR {irr:.1f}% within benchmark {bench_min}-{bench_max}%"
-        if bench_min <= irr <= bench_max
-        else f"⚠️ IRR {irr:.1f}% outside typical range {bench_min}-{bench_max}% for {bench['label']}"
+        f"✅ IRR {irr:.1f}% within benchmark {bench['min_irr']}-{bench['max_irr']}%"
+        if bench['min_irr'] <= irr <= bench['max_irr']
+        else f"⚠️ IRR {irr:.1f}% outside range {bench['min_irr']}-{bench['max_irr']}%"
     )
 
     risk_factors = []
@@ -266,29 +275,25 @@ elif step == 4:
         risk_factors.append(f"IRR ({irr:.1f}%) below WACC ({dr:.1f}%)")
     if pi < 1:
         risk_factors.append("Profitability Index below 1.0")
-    gap = scenarios['best']['npv'] - scenarios['worst']['npv']
-    if scenarios['base']['npv'] != 0 and abs(gap / scenarios['base']['npv']) > 0.5:
-        risk_factors.append("High variance between best and worst case")
     if not scenarios['base']['payback']:
         risk_factors.append("Investment not recovered within project life")
     if not risk_factors:
         risk_factors.append("No major risk factors identified")
 
     st.markdown(f"""
-    <div style='background:#1a1a2e;padding:20px;border-radius:10px;text-align:center;border:2px solid {verdict_color};'>
+    <div style='background:#1a1a2e;padding:20px;border-radius:10px;
+    text-align:center;border:2px solid {verdict_color};'>
         <h2 style='color:{verdict_color};'>{verdict}</h2>
         <p style='color:white;'>{bench_status}</p>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
     st.markdown("**🔺 Top Risk Factors:**")
     for i, risk in enumerate(risk_factors[:3], 1):
         st.write(f"{i}. {risk}")
 
     st.markdown("---")
 
-    # ── Financial Metrics ────────────────────────────────
     col1, col2, col3 = st.columns(3)
     col1.metric("📉 Worst NPV", f"{cur} {scenarios['worst']['npv']:,.0f}")
     col2.metric("📊 Base NPV",  f"{cur} {scenarios['base']['npv']:,.0f}",
@@ -308,7 +313,6 @@ elif step == 4:
 
     st.markdown("---")
 
-    # ── Cashflow Chart ───────────────────────────────────
     years_list = list(range(len(scenarios['base']['cashflows'])))
     fig = go.Figure()
     for label, key, color in [
@@ -325,24 +329,9 @@ elif step == 4:
                       yaxis_title=f"Cash Flow ({cur})")
     st.plotly_chart(fig, use_container_width=True)
 
-    fig2 = px.bar(
-        x=["Worst Case", "Base Case", "Best Case"],
-        y=[scenarios['worst']['npv'],
-           scenarios['base']['npv'],
-           scenarios['best']['npv']],
-        color=["Worst Case", "Base Case", "Best Case"],
-        color_discrete_map={
-            "Best Case":  "#2ecc71",
-            "Base Case":  "#3498db",
-            "Worst Case": "#e74c3c"},
-        title="NPV Comparison Across Scenarios",
-        labels={'x': 'Scenario', 'y': f'NPV ({cur})'}
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
     # ── Sensitivity Analysis ─────────────────────────────
     st.markdown("---")
-    st.subheader("🔬 Sensitivity Analysis — What If?")
+    st.subheader("🔬 Sensitivity Analysis")
     sens_results, base_npv = run_sensitivity(
         s["capex"], s["revenues"], s["fixed_costs"],
         s["var_costs"], s["maintenance"],
@@ -355,14 +344,164 @@ elif step == 4:
         sens_df, x="Scenario", y="Change %",
         color="Impact",
         color_discrete_map={
-            "🔴 High Risk":  "#e74c3c",
-            "🟡 Moderate":   "#f39c12",
-            "🟢 Low Risk":   "#2ecc71"},
-        title="NPV Sensitivity to Key Variables",
-        labels={"Change %": "NPV Change %"}
+            "🔴 High Risk": "#e74c3c",
+            "🟡 Moderate":  "#f39c12",
+            "🟢 Low Risk":  "#2ecc71"},
+        title="NPV Sensitivity to Key Variables"
     )
     fig3.add_hline(y=0, line_dash="dash", line_color="white")
     st.plotly_chart(fig3, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Project Comparison Section ───────────────────────
+    st.subheader("⚖️ Project Comparison")
+
+    projects = s.get("projects", [])
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if len(projects) < 4:
+            if st.button("➕ Add Another Project to Compare"):
+                st.session_state["step"] = 1
+                save_session(dict(st.session_state))
+                st.rerun()
+    with col2:
+        if st.button("🗑️ Clear All Projects"):
+            st.session_state["projects"] = []
+            save_session(dict(st.session_state))
+            st.rerun()
+
+    if len(projects) > 1:
+        st.markdown(f"**Comparing {len(projects)} Projects**")
+
+        # حساب metrics لكل مشروع
+        comparison_data = []
+        for p in projects:
+            sc = run_scenarios(
+                p["capex"], p["revenues"], p["fixed_costs"],
+                p["var_costs"], p["maintenance"],
+                p["tax_rate"], p["discount_rate"]
+            )
+            # حساب الـ Score
+            score = 0
+            if sc['base']['npv'] > 0:          score += 2
+            if (sc['base']['irr'] or 0) > (p['discount_rate'] * 100): score += 2
+            if (sc['base']['pi'] or 0) > 1:    score += 1
+            if sc['base']['payback']:           score += 1
+
+            comparison_data.append({
+                "Project":   p["name"],
+                "Type":      p["type"],
+                "NPV (Base)": round(sc['base']['npv'], 0),
+                "IRR (%)":   round(sc['base']['irr'], 1) if sc['base']['irr'] else 0,
+                "Payback":   f"Year {sc['base']['payback']}" if sc['base']['payback'] else "N/A",
+                "PI":        round(sc['base']['pi'], 2) if sc['base']['pi'] else 0,
+                "Score":     score,
+                "Verdict":   "🟢 APPROVE" if score >= 4
+                             else "🟡 CONDITIONAL" if score >= 2
+                             else "🔴 REJECT"
+            })
+
+        comp_df = pd.DataFrame(comparison_data)
+        comp_df = comp_df.sort_values("Score", ascending=False)
+        winner  = comp_df.iloc[0]["Project"]
+
+        st.success(f"🏆 Recommended Project: **{winner}**")
+        st.dataframe(comp_df, use_container_width=True)
+
+        # NPV Comparison Chart
+        fig_comp = px.bar(
+            comp_df, x="Project", y="NPV (Base)",
+            color="Verdict",
+            color_discrete_map={
+                "🟢 APPROVE":      "#2ecc71",
+                "🟡 CONDITIONAL":  "#f39c12",
+                "🔴 REJECT":       "#e74c3c"},
+            title="NPV Comparison Across Projects",
+            text="NPV (Base)"
+        )
+        fig_comp.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+        # IRR Comparison Chart
+        fig_irr = px.bar(
+            comp_df, x="Project", y="IRR (%)",
+            color="Verdict",
+            color_discrete_map={
+                "🟢 APPROVE":      "#2ecc71",
+                "🟡 CONDITIONAL":  "#f39c12",
+                "🔴 REJECT":       "#e74c3c"},
+            title="IRR Comparison Across Projects"
+        )
+        dr_pct = s['discount_rate'] * 100
+        fig_irr.add_hline(y=dr_pct, line_dash="dash",
+                          line_color="white",
+                          annotation_text=f"WACC {dr_pct:.1f}%")
+        st.plotly_chart(fig_irr, use_container_width=True)
+
+        # AI Comparison Memo
+        st.markdown("---")
+        st.subheader("🤖 AI Project Comparison Memo")
+        if st.button("Generate Comparison Memo"):
+            with st.spinner("Analyzing all projects..."):
+                projects_summary = ""
+                for _, row in comp_df.iterrows():
+                    projects_summary += f"""
+Project: {row['Project']} ({row['Type']})
+- NPV: {cur} {row['NPV (Base)']:,.0f}
+- IRR: {row['IRR (%)']:.1f}%
+- Payback: {row['Payback']}
+- Score: {row['Score']}/6
+- Verdict: {row['Verdict']}
+"""
+                prompt = f"""
+You are a CFO preparing a capital allocation recommendation for the Board.
+
+The company is evaluating {len(projects)} investment projects simultaneously.
+WACC / Discount Rate: {s['discount_rate']*100:.1f}%
+
+{projects_summary}
+
+Write a professional Capital Allocation Memo with:
+1. Executive Summary
+2. Project Rankings with Justification
+3. Risk Comparison
+4. Final Recommendation — which project(s) to approve and why
+5. Budget Allocation suggestion if multiple projects approved
+
+Reference CMA/CFA capital budgeting principles.
+Use formal CFO language suitable for board presentation.
+"""
+                try:
+                    groq_key = st.secrets.get("GROQ_API_KEY", "")
+                    if groq_key:
+                        resp = requests.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={
+                                "Content-Type":  "application/json",
+                                "Authorization": f"Bearer {groq_key}"
+                            },
+                            json={
+                                "model":      "llama-3.3-70b-versatile",
+                                "messages":   [{"role": "user",
+                                                "content": prompt}],
+                                "max_tokens": 1200
+                            },
+                            timeout=30
+                        )
+                        result = resp.json()
+                        if "choices" in result:
+                            memo = result["choices"][0]["message"]["content"]
+                            st.markdown(memo)
+                            st.session_state["comparison_memo"] = memo
+                            save_session(dict(st.session_state))
+                        else:
+                            st.error("API Error")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+    else:
+        st.info("Add at least one more project to enable comparison.")
 
     # ── Excel Export ─────────────────────────────────────
     st.markdown("---")
@@ -388,6 +527,9 @@ elif step == 4:
 
         sens_df.to_excel(writer, sheet_name='Sensitivity', index=False)
 
+        if len(projects) > 1:
+            comp_df.to_excel(writer, sheet_name='Comparison', index=False)
+
     st.download_button(
         "⬇️ Download Excel Report",
         data=output.getvalue(),
@@ -406,7 +548,6 @@ elif step == 4:
             st.session_state["step"] = 5
             save_session(dict(st.session_state))
             st.rerun()
-
 # ── STEP 5 ───────────────────────────────────────────────
 elif step == 5:
     st.subheader("🤖 CFO Investment Recommendation")
