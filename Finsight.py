@@ -30,6 +30,9 @@ if "project_name" not in st.session_state:
             st.session_state[k] = v
         st.rerun()
 
+if "projects" not in st.session_state:
+    st.session_state["projects"] = []
+
 step   = st.session_state.get("step", 1)
 labels = ["📋 Project Info", "📂 Data Input",
           "🔍 Validation", "📊 Results", "🤖 CFO Report"]
@@ -51,8 +54,7 @@ if step == 1:
         company_name = st.text_input("Company Name",
                            placeholder="e.g. Edita Food Industries")
         currency = st.selectbox("Base Currency", ["EGP", "USD", "EUR"])
-    if "projects" not in st.session_state:
-           st.session_state["projects"] = []
+
     if st.button("Next →"):
         if not project_name:
             st.error("Please enter a project name.")
@@ -134,25 +136,29 @@ elif step == 2:
                 st.rerun()
         with col2:
             if st.button("Next →"):
-                st.session_state.update({
-                    "input_mode": "manual", "capex": capex,
-                    "revenues": revenues, "fixed_costs": fixed_costs,
-                    "var_costs": var_costs, "maintenance": maintenance,
+                st.session_state["projects"].append({
+                    "name":          st.session_state.get("project_name", "Project"),
+                    "type":          st.session_state.get("project_type", "Expansion"),
+                    "capex":         capex,
+                    "revenues":      revenues,
+                    "fixed_costs":   fixed_costs,
+                    "var_costs":     var_costs,
+                    "maintenance":   maintenance,
                     "discount_rate": discount_rate / 100,
-                    "tax_rate": tax_rate / 100,
-                    "inflation": inflation / 100, "step": 3
+                    "tax_rate":      tax_rate / 100,
                 })
-               st.session_state["projects"].append({
-    "name":          st.session_state.get("project_name", "Project"),
-    "type":          st.session_state.get("project_type", "Expansion"),
-    "capex":         capex,
-    "revenues":      revenues,
-    "fixed_costs":   fixed_costs,
-    "var_costs":     var_costs,
-    "maintenance":   maintenance,
-    "discount_rate": discount_rate / 100,
-    "tax_rate":      tax_rate / 100,
-})
+                st.session_state.update({
+                    "input_mode":    "manual",
+                    "capex":         capex,
+                    "revenues":      revenues,
+                    "fixed_costs":   fixed_costs,
+                    "var_costs":     var_costs,
+                    "maintenance":   maintenance,
+                    "discount_rate": discount_rate / 100,
+                    "tax_rate":      tax_rate / 100,
+                    "inflation":     inflation / 100,
+                    "step":          3
+                })
                 save_session(dict(st.session_state))
                 st.rerun()
 
@@ -188,14 +194,12 @@ elif step == 3:
                         "discount_rate": normalize_percentage(discount_input),
                         "tax_rate":      normalize_percentage(tax_input),
                         "inflation":     normalize_percentage(inflation_input),
-                        "step": 4
+                        "step":          4
                     })
                     save_session(dict(st.session_state))
                     st.rerun()
     else:
         st.success("✅ Manual entry validated")
-
-        # Assumption Alerts
         st.markdown("### 🔔 Assumption Risk Check")
         alerts = check_assumptions(
             s.get("discount_rate", 0.12),
@@ -354,10 +358,9 @@ elif step == 4:
 
     st.markdown("---")
 
-    # ── Project Comparison Section ───────────────────────
+    # ── Project Comparison ───────────────────────────────
     st.subheader("⚖️ Project Comparison")
-
-    projects = s.get("projects", [])
+    projects = st.session_state.get("projects", [])
 
     col1, col2 = st.columns(2)
     with col1:
@@ -374,8 +377,6 @@ elif step == 4:
 
     if len(projects) > 1:
         st.markdown(f"**Comparing {len(projects)} Projects**")
-
-        # حساب metrics لكل مشروع
         comparison_data = []
         for p in projects:
             sc = run_scenarios(
@@ -383,55 +384,54 @@ elif step == 4:
                 p["var_costs"], p["maintenance"],
                 p["tax_rate"], p["discount_rate"]
             )
-            # حساب الـ Score
             score = 0
-            if sc['base']['npv'] > 0:          score += 2
-            if (sc['base']['irr'] or 0) > (p['discount_rate'] * 100): score += 2
-            if (sc['base']['pi'] or 0) > 1:    score += 1
-            if sc['base']['payback']:           score += 1
+            if sc['base']['npv'] > 0:
+                score += 2
+            if (sc['base']['irr'] or 0) > (p['discount_rate'] * 100):
+                score += 2
+            if (sc['base']['pi'] or 0) > 1:
+                score += 1
+            if sc['base']['payback']:
+                score += 1
 
             comparison_data.append({
-                "Project":   p["name"],
-                "Type":      p["type"],
+                "Project":    p["name"],
+                "Type":       p["type"],
                 "NPV (Base)": round(sc['base']['npv'], 0),
-                "IRR (%)":   round(sc['base']['irr'], 1) if sc['base']['irr'] else 0,
-                "Payback":   f"Year {sc['base']['payback']}" if sc['base']['payback'] else "N/A",
-                "PI":        round(sc['base']['pi'], 2) if sc['base']['pi'] else 0,
-                "Score":     score,
-                "Verdict":   "🟢 APPROVE" if score >= 4
-                             else "🟡 CONDITIONAL" if score >= 2
-                             else "🔴 REJECT"
+                "IRR (%)":    round(sc['base']['irr'], 1) if sc['base']['irr'] else 0,
+                "Payback":    f"Year {sc['base']['payback']}" if sc['base']['payback'] else "N/A",
+                "PI":         round(sc['base']['pi'], 2) if sc['base']['pi'] else 0,
+                "Score":      score,
+                "Verdict":    "🟢 APPROVE" if score >= 4
+                              else "🟡 CONDITIONAL" if score >= 2
+                              else "🔴 REJECT"
             })
 
-        comp_df = pd.DataFrame(comparison_data)
-        comp_df = comp_df.sort_values("Score", ascending=False)
+        comp_df = pd.DataFrame(comparison_data).sort_values("Score", ascending=False)
         winner  = comp_df.iloc[0]["Project"]
-
         st.success(f"🏆 Recommended Project: **{winner}**")
         st.dataframe(comp_df, use_container_width=True)
 
-        # NPV Comparison Chart
         fig_comp = px.bar(
             comp_df, x="Project", y="NPV (Base)",
             color="Verdict",
             color_discrete_map={
-                "🟢 APPROVE":      "#2ecc71",
-                "🟡 CONDITIONAL":  "#f39c12",
-                "🔴 REJECT":       "#e74c3c"},
+                "🟢 APPROVE":     "#2ecc71",
+                "🟡 CONDITIONAL": "#f39c12",
+                "🔴 REJECT":      "#e74c3c"},
             title="NPV Comparison Across Projects",
             text="NPV (Base)"
         )
         fig_comp.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
         st.plotly_chart(fig_comp, use_container_width=True)
 
-        # IRR Comparison Chart
         fig_irr = px.bar(
             comp_df, x="Project", y="IRR (%)",
             color="Verdict",
             color_discrete_map={
-                "🟢 APPROVE":      "#2ecc71",
-                "🟡 CONDITIONAL":  "#f39c12",
-                "🔴 REJECT":       "#e74c3c"},
+                "🟢 APPROVE":     "#2ecc71",
+                "🟡 CONDITIONAL": "#f39c12",
+                "🔴 REJECT":      "#e74c3c"},
             title="IRR Comparison Across Projects"
         )
         dr_pct = s['discount_rate'] * 100
@@ -440,24 +440,22 @@ elif step == 4:
                           annotation_text=f"WACC {dr_pct:.1f}%")
         st.plotly_chart(fig_irr, use_container_width=True)
 
-        # AI Comparison Memo
         st.markdown("---")
         st.subheader("🤖 AI Project Comparison Memo")
         if st.button("Generate Comparison Memo"):
             with st.spinner("Analyzing all projects..."):
                 projects_summary = ""
                 for _, row in comp_df.iterrows():
-                    projects_summary += f"""
-Project: {row['Project']} ({row['Type']})
-- NPV: {cur} {row['NPV (Base)']:,.0f}
-- IRR: {row['IRR (%)']:.1f}%
-- Payback: {row['Payback']}
-- Score: {row['Score']}/6
-- Verdict: {row['Verdict']}
-"""
+                    projects_summary += (
+                        f"Project: {row['Project']} ({row['Type']})\n"
+                        f"- NPV: {cur} {row['NPV (Base)']:,.0f}\n"
+                        f"- IRR: {row['IRR (%)']:.1f}%\n"
+                        f"- Payback: {row['Payback']}\n"
+                        f"- Score: {row['Score']}/6\n"
+                        f"- Verdict: {row['Verdict']}\n\n"
+                    )
                 prompt = f"""
 You are a CFO preparing a capital allocation recommendation for the Board.
-
 The company is evaluating {len(projects)} investment projects simultaneously.
 WACC / Discount Rate: {s['discount_rate']*100:.1f}%
 
@@ -467,8 +465,8 @@ Write a professional Capital Allocation Memo with:
 1. Executive Summary
 2. Project Rankings with Justification
 3. Risk Comparison
-4. Final Recommendation — which project(s) to approve and why
-5. Budget Allocation suggestion if multiple projects approved
+4. Final Recommendation
+5. Budget Allocation suggestion
 
 Reference CMA/CFA capital budgeting principles.
 Use formal CFO language suitable for board presentation.
@@ -484,8 +482,7 @@ Use formal CFO language suitable for board presentation.
                             },
                             json={
                                 "model":      "llama-3.3-70b-versatile",
-                                "messages":   [{"role": "user",
-                                                "content": prompt}],
+                                "messages":   [{"role": "user", "content": prompt}],
                                 "max_tokens": 1200
                             },
                             timeout=30
@@ -509,13 +506,13 @@ Use formal CFO language suitable for board presentation.
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         pd.DataFrame({
-            'Metric':  ['NPV', 'IRR (%)', 'Payback', 'PI'],
-            'Worst':   [scenarios['worst']['npv'], scenarios['worst']['irr'],
-                        scenarios['worst']['payback'], scenarios['worst']['pi']],
-            'Base':    [scenarios['base']['npv'],  scenarios['base']['irr'],
-                        scenarios['base']['payback'],  scenarios['base']['pi']],
-            'Best':    [scenarios['best']['npv'],  scenarios['best']['irr'],
-                        scenarios['best']['payback'],  scenarios['best']['pi']],
+            'Metric': ['NPV', 'IRR (%)', 'Payback', 'PI'],
+            'Worst':  [scenarios['worst']['npv'], scenarios['worst']['irr'],
+                       scenarios['worst']['payback'], scenarios['worst']['pi']],
+            'Base':   [scenarios['base']['npv'],  scenarios['base']['irr'],
+                       scenarios['base']['payback'],  scenarios['base']['pi']],
+            'Best':   [scenarios['best']['npv'],  scenarios['best']['irr'],
+                       scenarios['best']['payback'],  scenarios['best']['pi']],
         }).to_excel(writer, sheet_name='Summary', index=False)
 
         pd.DataFrame({
@@ -548,11 +545,12 @@ Use formal CFO language suitable for board presentation.
             st.session_state["step"] = 5
             save_session(dict(st.session_state))
             st.rerun()
+
 # ── STEP 5 ───────────────────────────────────────────────
 elif step == 5:
     st.subheader("🤖 CFO Investment Recommendation")
-    s  = st.session_state
-    sc = s["scenarios"]
+    s   = st.session_state
+    sc  = s["scenarios"]
     cur = s.get("currency", "EGP")
 
     worst_pi  = f"{sc['worst']['pi']:.2f}"   if sc['worst']['pi']  else "N/A"
@@ -624,12 +622,12 @@ Use formal CFO language suitable for board presentation.
                     resp = requests.post(
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={
-                            "Content-Type": "application/json",
+                            "Content-Type":  "application/json",
                             "Authorization": f"Bearer {groq_key}"
                         },
                         json={
-                            "model": "llama-3.3-70b-versatile",
-                            "messages": [{"role": "user", "content": prompt}],
+                            "model":      "llama-3.3-70b-versatile",
+                            "messages":   [{"role": "user", "content": prompt}],
                             "max_tokens": 1000
                         },
                         timeout=30
